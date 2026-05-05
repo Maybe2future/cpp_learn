@@ -314,29 +314,39 @@ class CppTutorialApp {
       ${next ? `<a class="nav-btn" href="#${next.id}" onclick="app.showChapter(${this.currentChapter + 1}); return false;">${next.title} →</a>` : '<span></span>'}
     `;
   }
-
   applyCodeHighlight() {
     const keywords = ['auto', 'break', 'case', 'catch', 'class', 'const', 'constexpr', 'continue', 'default', 'delete', 'do', 'else', 'enum', 'explicit', 'export', 'extern', 'false', 'for', 'friend', 'goto', 'if', 'inline', 'mutable', 'namespace', 'new', 'noexcept', 'nullptr', 'operator', 'private', 'protected', 'public', 'register', 'reinterpret_cast', 'return', 'sizeof', 'static', 'static_assert', 'static_cast', 'struct', 'switch', 'template', 'this', 'thread_local', 'throw', 'true', 'try', 'typedef', 'typeid', 'typename', 'union', 'using', 'virtual', 'void', 'volatile', 'while', 'and', 'and_eq', 'bitand', 'bitor', 'compl', 'not', 'not_eq', 'or', 'or_eq', 'xor', 'xor_eq'];
     const types = ['bool', 'char', 'char8_t', 'char16_t', 'char32_t', 'double', 'float', 'int', 'long', 'short', 'signed', 'unsigned', 'void', 'wchar_t', 'size_t', 'string', 'vector', 'map', 'set', 'array', 'list', 'deque', 'queue', 'stack', 'priority_queue', 'unordered_map', 'unordered_set', 'pair', 'tuple', 'unique_ptr', 'shared_ptr', 'weak_ptr', 'make_unique', 'make_shared', 'optional', 'variant', 'any'];
     const macros = ['#include', '#define', '#ifdef', '#ifndef', '#endif', '#pragma', '#if', '#else', '#elif'];
-
     document.querySelectorAll('.code-block pre code').forEach(block => {
       let html = block.textContent;
+      // Save string literals first (avoid keyword replacement inside strings)
+      const strings = [];
+      html = html.replace(/"[^"]*"/g, m => {
+        strings.push(m);
+        return '\x00STR' + strings.length + '\x00';
+      });
+      html = html.replace(/'[^']*'/g, m => {
+        strings.push(m);
+        return '\x00STR' + strings.length + '\x00';
+      });
       keywords.forEach(kw => {
-        const re = new RegExp('\\b' + kw + '\\b', 'g');
+        const re = new RegExp('\b' + kw + '\b', 'g');
         html = html.replace(re, `<span class="hl-keyword">${kw}</span>`);
       });
       types.forEach(t => {
-        const re = new RegExp('\\b' + t + '\\b', 'g');
+        const re = new RegExp('\b' + t + '\b', 'g');
         html = html.replace(re, `<span class="hl-type">${t}</span>`);
       });
       macros.forEach(m => {
         html = html.split(m).join(`<span class="hl-macro">${m}</span>`);
       });
-      html = html.replace(/"[^"]*"/g, m => `<span class="hl-string">${m}</span>`);
-      html = html.replace(/'[^']*'/g, m => `<span class="hl-string">${m}</span>`);
-      html = html.replace(/\\b\\d+(\\.\\d+)?\\b/g, m => `<span class="hl-number">${m}</span>`);
+      html = html.replace(/\b\d+(\.\d+)?\b/g, m => `<span class="hl-number">${m}</span>`);
       html = html.replace(/\/\/.*/g, m => `<span class="hl-comment">${m}</span>`);
+      // Restore string literals
+      html = html.replace(/\x00STR(\d+)\x00/g, (_, idx) => {
+        return `<span class="hl-string">${strings[parseInt(idx)-1]}</span>`;
+      });
       block.innerHTML = html;
     });
   }
