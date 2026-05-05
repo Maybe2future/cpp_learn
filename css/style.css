@@ -749,3 +749,162 @@ tr:hover {
   display: flex;
   gap: 8px;
 }
+
+/* ===== 练习/习题系统样式 ===== */
+
+.exercise-section {
+  margin-top: 32px;
+}
+
+.quiz-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin: 16px 0;
+  transition: var(--transition);
+}
+
+.quiz-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.quiz-question {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quiz-option {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.quiz-option:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.quiz-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.quiz-option:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+
+.quiz-result {
+  margin-top: 12px;
+  font-size: 0.95rem;
+}
+
+.quiz-submit {
+  padding: 8px 20px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: white;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.quiz-submit:hover {
+  background: var(--accent-hover);
+}
+
+.fillblank-area {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fillblank-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-code);
+  font-size: 0.9rem;
+  transition: var(--transition);
+}
+
+.fillblank-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fillblank-check {
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.fillblank-check:hover {
+  background: var(--accent-hover);
+}
+
+.quiz-reset {
+  padding: 4px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: var(--transition);
+}
+
+.quiz-reset:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* 练习完成进度 */
+.exercise-progress {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.progress-dot.correct {
+  background: var(--success);
+}
+
+.progress-dot.wrong {
+  background: var(--danger);
+}
