@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+  <div id="status">Loading...</div>
+  <script src="js/chapters.js"></script>
+  <script>
+    document.getElementById('status').textContent = 
+      typeof CHAPTERS !== 'undefined' 
+        ? 'CHAPTERS loaded: ' + CHAPTERS.length + ' chapters'
+        : 'CHAPTERS NOT DEFINED';
+  </script>
+</body>
+</html>
