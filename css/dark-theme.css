@@ -1,0 +1,23 @@
+/* ===== 深色主题覆盖 ===== */
+
+[data-theme="dark"] .code-block pre {
+  background: var(--code-bg);
+}
+
+[data-theme="dark"] .code-header {
+  background: #1E293B;
+}
+
+[data-theme="dark"] table th {
+  background: #1E293B;
+}
+
+[data-theme="dark"] .search-box input {
+  background: #1E293B;
+  border-color: #2D3A4F;
+}
+
+[data-theme="dark"] .code-btn {
+  background: #1E293B;
+  border-color: #2D3A4F;
+}
