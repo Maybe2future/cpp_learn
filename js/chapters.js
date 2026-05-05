@@ -2876,7 +2876,7 @@ endif()
 # 查找 pkg-config 管理的库
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSONCPP jsoncpp REQUIRED)
-target_link_libraries(myapp PRIVATE ${JSONCPP_LIBRARIES})
+target_link_libraries(myapp PRIVATE \${JSONCPP_LIBRARIES})
 
 # 条件编译
 option(ENABLE_TESTING "Build tests" ON)
@@ -2887,7 +2887,7 @@ endif()
 
 # 文件操作
 file(GLOB SOURCES "src/*.cpp")  # 不推荐！CMake 无法检测新文件
-file(COPY config.ini DESTINATION ${CMAKE_BINARY_DIR})
+file(COPY config.ini DESTINATION \${CMAKE_BINARY_DIR})
 
 # 安装规则
 install(TARGETS myapp DESTINATION bin)
