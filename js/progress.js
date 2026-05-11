@@ -77,6 +77,7 @@ class ProgressManager {
     ch.quizScore = score;
     ch.quizAttempts = (ch.quizAttempts || 0) + 1;
     if (score === 100) ch.quizCorrect = (ch.quizCorrect || 0) + 1;
+    ch.read = true; // Mark chapter as read when quiz is submitted
     this._updateTotalScore();
     this.save();
   }
