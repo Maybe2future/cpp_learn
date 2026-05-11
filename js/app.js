@@ -673,41 +673,75 @@ class CppTutorialApp {
   /* ---------- 代码高亮 ---------- */
 
   applyCodeHighlight() {
-    const keywords = ['auto', 'break', 'case', 'catch', 'class', 'const', 'constexpr', 'continue', 'default', 'delete', 'do', 'else', 'enum', 'explicit', 'export', 'extern', 'false', 'for', 'friend', 'goto', 'if', 'inline', 'mutable', 'namespace', 'new', 'noexcept', 'nullptr', 'operator', 'private', 'protected', 'public', 'register', 'reinterpret_cast', 'return', 'sizeof', 'static', 'static_assert', 'static_cast', 'struct', 'switch', 'template', 'this', 'thread_local', 'throw', 'true', 'try', 'typedef', 'typeid', 'typename', 'union', 'using', 'virtual', 'void', 'volatile', 'while', 'and', 'and_eq', 'bitand', 'bitor', 'compl', 'not', 'not_eq', 'or', 'or_eq', 'xor', 'xor_eq', 'co_await', 'co_return', 'co_yield', 'concept', 'consteval', 'constinit', 'requires'];
-    const types = ['bool', 'char', 'char8_t', 'char16_t', 'char32_t', 'double', 'float', 'int', 'long', 'short', 'signed', 'unsigned', 'void', 'wchar_t', 'size_t', 'string', 'vector', 'map', 'set', 'array', 'list', 'deque', 'queue', 'stack', 'priority_queue', 'unordered_map', 'unordered_set', 'pair', 'tuple', 'unique_ptr', 'shared_ptr', 'weak_ptr', 'make_unique', 'make_shared', 'optional', 'variant', 'any', 'span', 'string_view', 'format', 'ranges', 'views'];
-    const macros = ['#include', '#define', '#ifdef', '#ifndef', '#endif', '#pragma', '#if', '#else', '#elif'];
+    const keywords = ['auto','break','case','catch','class','const','constexpr','continue','default','delete','do','else','enum','explicit','export','extern','false','for','friend','goto','if','inline','mutable','namespace','new','noexcept','nullptr','operator','private','protected','public','register','reinterpret_cast','return','sizeof','static','static_assert','static_cast','struct','switch','template','this','thread_local','throw','true','try','typedef','typeid','typename','union','using','virtual','void','volatile','while','and','and_eq','bitand','bitor','compl','not','not_eq','or','or_eq','xor','xor_eq','co_await','co_return','co_yield','concept','consteval','constinit','requires'];
+    const types = ['bool','char','char8_t','char16_t','char32_t','double','float','int','long','short','signed','unsigned','void','wchar_t','size_t','string','vector','map','set','array','list','deque','queue','stack','priority_queue','unordered_map','unordered_set','pair','tuple','unique_ptr','shared_ptr','weak_ptr','make_unique','make_shared','optional','variant','any','span','string_view','format','ranges','views'];
+    const macros = ['#include','#define','#ifdef','#ifndef','#endif','#pragma','#if','#else','#elif'];
+    const kwSet = new Set(keywords);
+    const typeSet = new Set(types);
+    const macroSet = new Set(macros);
+
     document.querySelectorAll('.code-block pre code').forEach(block => {
-      let html = block.textContent;
-      // Step 1: Escape raw < > in source code BEFORE any highlighting (prevents HTML injection)
-      html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      // Step 2: Save string literals first (avoid keyword replacement inside strings)
-      const strings = [];
-      html = html.replace(/&quot;[^&quot;]*&quot;/g, m => {
-        strings.push(m);
-        return '\x00STR' + strings.length + '\x00';
+      // Get plain text and clear the block
+      const text = block.textContent;
+      block.textContent = '';
+
+      // Simple tokenizer: split on keyword/type/macro boundaries
+      // This regex captures: keywords, types, macros, strings, numbers, comments, and everything else
+      const regex = new RegExp(
+        '(' +
+        macros.map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + '|' +
+        keywords.map(k => '\\b' + k + '\\b').join('|') + '|' +
+        types.map(t => '\\b' + t + '\\b').join('|') + '|' +
+        '"(?:[^"\\]|\\.)*"|' +     // double-quoted strings
+        "'(?:[^'\\]|\\.)*'"|' +      // single-quoted strings
+        '\\b\\d+(?:\\.\\d+)?\\b|' +   // numbers
+        '//.*' +                     // single-line comments
+        ')', 'g'
+      );
+
+      const parts = text.split(regex);
+      parts.forEach(part => {
+        if (!part) return;
+        if (macroSet.has(part)) {
+          const span = document.createElement('span');
+          span.className = 'hl-macro';
+          span.textContent = part;
+          block.appendChild(span);
+        } else if (kwSet.has(part)) {
+          const span = document.createElement('span');
+          span.className = 'hl-keyword';
+          span.textContent = part;
+          block.appendChild(span);
+        } else if (typeSet.has(part)) {
+          const span = document.createElement('span');
+          span.className = 'hl-type';
+          span.textContent = part;
+          block.appendChild(span);
+        } else if (part.startsWith('"') && part.endsWith('"')) {
+          const span = document.createElement('span');
+          span.className = 'hl-string';
+          span.textContent = part;
+          block.appendChild(span);
+        } else if (part.startsWith("'") && part.endsWith("'")) {
+          const span = document.createElement('span');
+          span.className = 'hl-string';
+          span.textContent = part;
+          block.appendChild(span);
+        } else if (/^\d+(\.\d+)?$/.test(part)) {
+          const span = document.createElement('span');
+          span.className = 'hl-number';
+          span.textContent = part;
+          block.appendChild(span);
+        } else if (part.startsWith('//')) {
+          const span = document.createElement('span');
+          span.className = 'hl-comment';
+          span.textContent = part;
+          block.appendChild(span);
+        } else {
+          // Regular text — create a text node (no HTML parsing risk)
+          block.appendChild(document.createTextNode(part));
+        }
       });
-      html = html.replace(/&#039;[^&#039;]*&#039;/g, m => {
-        strings.push(m);
-        return '\x00STR' + strings.length + '\x00';
-      });
-      keywords.forEach(kw => {
-        const re = new RegExp('\\b' + kw + '\\b', 'g');
-        html = html.replace(re, `<span class="hl-keyword">${kw}</span>`);
-      });
-      types.forEach(t => {
-        const re = new RegExp('\\b' + t + '\\b', 'g');
-        html = html.replace(re, `<span class="hl-type">${t}</span>`);
-      });
-      macros.forEach(m => {
-        html = html.split(m).join(`<span class="hl-macro">${m}</span>`);
-      });
-      html = html.replace(/\b\d+(\.\d+)?\b/g, m => `<span class="hl-number">${m}</span>`);
-      html = html.replace(/\/\/.*/g, m => `<span class="hl-comment">${m}</span>`);
-      // Restore string literals
-      html = html.replace(/\x00STR(\d+)\x00/g, (_, idx) => {
-        return `<span class="hl-string">${strings[parseInt(idx)-1]}</span>`;
-      });
-      block.innerHTML = html;
     });
   }
 
