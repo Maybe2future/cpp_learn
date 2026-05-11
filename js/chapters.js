@@ -2942,4 +2942,1584 @@ set(CPACK_PACKAGE_NAME "MyApp")</code></pre>
 `,
     exercises: [{"type": "choice", "question": "CMake 是什么类型的工具？", "options": ["编译器", "元构建系统", "IDE", "调试器"], "answer": "1"}, {"type": "truefalse", "question": "在 Makefile 中，$@ 表示目标文件名。", "answer": "true"}, {"type": "fillblank", "question": "CMake 的入口配置文件名称是 ______。", "answer": "CMakeLists.txt"}, {"type": "output", "code": "# Makefile\n.PHONY: all\nall:\n\techo \"building\"\n# 运行 make 后输出什么？", "options": ["building", "echo building", "all", "编译错误"], "answer": "1"}, {"type": "choice", "question": "现代 CMake 推荐用哪个命令给目标添加头文件路径？", "options": ["include_directories", "target_include_directories", "add_definitions", "set(CMAKE_INCLUDE_PATH)"], "answer": "1"}]
   }
+,
+  {
+    id: "ch16",
+    title: "第16章：现代 C++ 工程构建",
+    subtitle: "CMake 与 vcpkg",
+    icon: "🔧",
+    summary: "掌握现代 CMake Target-based 构建范式，使用 vcpkg 和 Conan 管理第三方依赖",
+    version: "",
+    topics: ["CMake", "vcpkg", "构建系统", "Conan"],
+    content: `
+<h2>为什么需要构建系统？</h2>
+<p>当项目从单个 <code>main.cpp</code> 扩展到数十个文件、依赖多个第三方库时，手动管理编译命令变得不可维护。构建系统解决以下问题：</p>
+<ul>
+  <li><strong>依赖追踪</strong>：修改头文件后，只重新编译受影响的源文件</li>
+  <li><strong>跨平台</strong>：同一套配置在 Linux、macOS、Windows 上都能构建</li>
+  <li><strong>库管理</strong>：自动查找和链接第三方库（fmt、Boost、OpenSSL 等）</li>
+  <li><strong>多配置</strong>：Debug/Release/RelWithDebInfo 等不同构建类型</li>
+</ul>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 构建系统演进</div>
+  <p>手写命令 → Makefile → Autotools → CMake → 现代 CMake（Target-based）。现代 CMake（3.0+）摒弃了全局变量，采用以 Target 为中心的声明式范式。</p>
+</div>
+
+<h2>现代 CMake Target-based 范式</h2>
+<p>传统 CMake 使用全局变量（如 <code>include_directories</code>、<code>link_libraries</code>），导致依赖关系不清晰。现代 CMake 将<strong>所有属性绑定到 Target</strong>上，每个 Target 自描述其接口。</p>
+
+<table>
+  <tr><th>传统 CMake（不推荐）</th><th>现代 CMake（推荐）</th></tr>
+  <tr><td><code>include_directories(./include)</code></td><td><code>target_include_directories(tgt PRIVATE ./include)</code></td></tr>
+  <tr><td><code>add_definitions(-DDEBUG)</code></td><td><code>target_compile_definitions(tgt PRIVATE DEBUG)</code></td></tr>
+  <tr><td><code>set(CMAKE_CXX_FLAGS "-Wall")</code></td><td><code>target_compile_options(tgt PRIVATE -Wall)</code></td></tr>
+  <tr><td><code>link_libraries(pthread)</code></td><td><code>target_link_libraries(tgt PRIVATE pthread)</code></td></tr>
+</table>
+
+<h3>核心命令：add_executable 与 target_link_libraries</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">cmake</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># CMakeLists.txt - 最小可运行示例
+cmake_minimum_required(VERSION 3.20)
+project(HelloCMake VERSION 1.0 LANGUAGES CXX)
+
+# 设置 C++20 标准
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 定义可执行文件目标
+add_executable(hello src/main.cpp src/utils.cpp)
+
+# 给目标绑定属性（不是全局变量！）
+target_include_directories(hello PRIVATE include)
+target_compile_options(hello PRIVATE -Wall -Wextra)
+target_compile_definitions(hello PRIVATE PROJECT_NAME="HelloCMake")</code></pre>
+</div>
+
+<h2>PUBLIC / PRIVATE / INTERFACE 可见性语义</h2>
+<p>这是现代 CMake 的核心概念，理解这三者的区别至关重要：</p>
+
+<table>
+  <tr><th>关键字</th><th>含义</th><th>使用场景</th></tr>
+  <tr><td><code>PRIVATE</code></td><td>仅当前目标内部使用</td><td>实现文件依赖的头文件路径</td></tr>
+  <tr><td><code>PUBLIC</code></td><td>当前目标使用 + 传递给依赖该目标的其他目标</td><td>头文件库（header-only）的 include 路径</td></tr>
+  <tr><td><code>INTERFACE</code></td><td>不用于当前目标，仅传递给使用者</td><td>纯接口定义（如编译警告选项）</td></tr>
+</table>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">cmake</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 库目标：mylib（静态库）
+add_library(mylib STATIC src/mylib.cpp)
+target_include_directories(mylib PUBLIC include)   # 使用者也需要这些头文件
+target_link_libraries(mylib PRIVATE zlib)          # 仅内部使用 zlib
+
+# 可执行文件：app
+add_executable(app src/main.cpp)
+target_link_libraries(app PUBLIC mylib)            # app 自动获得 mylib 的 PUBLIC 属性
+
+# 分析：
+# - app 可以使用 mylib/include 下的头文件（因为 mylib 标记为 PUBLIC）
+# - app 不需要链接 zlib（因为 mylib 标记为 PRIVATE）
+# - 如果 mylib 改为 INTERFACE 依赖 zlib，app 也会链接 zlib</code></pre>
+</div>
+
+<div class="callout note">
+  <div class="callout-icon">📘 传递性依赖</div>
+  <p>可见性控制实现了<strong>传递性依赖管理</strong>：当 target A 链接 target B 时，A 自动获得 B 的 PUBLIC 和 INTERFACE 属性，但不会获得 B 的 PRIVATE 属性。这使得大型项目的依赖关系清晰可维护。</p>
+</div>
+
+<h2>vcpkg 包管理器</h2>
+<p><strong>vcpkg</strong> 是微软开发的开源 C++ 包管理器，支持跨平台安装和管理第三方库。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 安装 vcpkg
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg
+./bootstrap-vcpkg.sh        # Linux/macOS
+.\bootstrap-vcpkg.bat       # Windows
+
+# 安装库
+./vcpkg install fmt         # 安装 fmt 库
+./vcpkg install nlohmann-json --triplet x64-linux
+
+# 查看已安装列表
+./vcpkg list
+
+# 在 CMake 中使用 vcpkg
+# 方法1：使用 vcpkg 工具链文件
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+
+# 方法2：在 CMakeLists.txt 中集成
+set(CMAKE_TOOLCHAIN_FILE "\${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    CACHE STRING "Vcpkg toolchain file")</code></pre>
+</div>
+
+<h2>Conan 简介</h2>
+<p><strong>Conan</strong> 是另一个流行的 C++ 包管理器，使用 Python 风格的配置文件（conanfile.py 或 conanfile.txt）。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">ini</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># conanfile.txt - 声明依赖
+[requires]
+fmt/10.2.1
+spdlog/1.13.0
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+# 安装依赖
+conan install . --output-folder=build --build=missing
+
+# 构建
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+cmake --build build</code></pre>
+</div>
+
+<h2>实践：创建使用 fmt 库的 CMake 项目</h2>
+<p>下面是一个完整的项目，演示 CMake + vcpkg + fmt 的完整工作流。</p>
+
+<h3>项目结构</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Text</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>fmt-demo/
+├── CMakeLists.txt
+├── src/
+│   └── main.cpp
+└── vcpkg.json          # vcpkg 清单文件（声明依赖）</code></pre>
+</div>
+
+<h3>vcpkg.json</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">json</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>{
+  "name": "fmt-demo",
+  "version": "1.0.0",
+  "dependencies": [
+    "fmt"
+  ]
+}</code></pre>
+</div>
+
+<h3>CMakeLists.txt</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">cmake</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>cmake_minimum_required(VERSION 3.20)
+project(FmtDemo VERSION 1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 查找 fmt 库
+find_package(fmt CONFIG REQUIRED)
+
+add_executable(fmt_demo src/main.cpp)
+
+# 链接 fmt 库 - PUBLIC 因为 fmt 的头文件在接口中暴露
+target_link_libraries(fmt_demo PUBLIC fmt::fmt)</code></pre>
+</div>
+
+<h3>src/main.cpp</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include &lt;fmt/format.h&gt;
+#include &lt;fmt/ranges.h&gt;
+#include &lt;vector&gt;
+#include &lt;string&gt;
+
+int main() {
+    // 基本格式化
+    fmt::print("Hello, {}!\n", "CMake");
+
+    // 格式化到字符串
+    std::string s = fmt::format("The answer is {}", 42);
+
+    // 格式化容器
+    std::vector&lt;int&gt; vec = {1, 2, 3, 4, 5};
+    fmt::print("Vector: {}\n", vec);
+
+    // 格式化选项
+    fmt::print("Pi = {:.5f}\n", 3.14159265359);
+
+    return 0;
+}</code></pre>
+</div>
+
+<h3>构建命令</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 使用 vcpkg 工具链构建
+cmake -B build -S . \
+    -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+
+# 编译
+cmake --build build
+
+# 运行
+./build/fmt_demo</code></pre>
+</div>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 现代 CMake 检查清单</div>
+  <p>✅ 使用 <code>target_*</code> 命令替代全局变量<br>✅ 正确设置 PUBLIC/PRIVATE/INTERFACE<br>✅ 用 <code>find_package</code> 查找外部库<br>✅ 用 vcpkg/Conan 管理第三方依赖<br>✅ 使用 out-of-source 构建（build 目录）</p>
+</div>
+`,
+    exercises: [
+      {"type": "choice", "question": "现代 CMake 推荐用哪个命令给目标添加头文件搜索路径？", "options": ["include_directories()", "target_include_directories()", "add_definitions()", "set(CMAKE_INCLUDE_PATH)"], "answer": "1"},
+      {"type": "truefalse", "question": "CMake 中 PRIVATE 属性的依赖会传递给链接该目标的其他目标。", "answer": "false"},
+      {"type": "fillblank", "question": "CMake 中，当库的头文件需要被使用者包含时，应该使用 ______ 可见性。", "answer": "PUBLIC"},
+      {"type": "choice", "question": "vcpkg 的清单文件名是什么？", "options": ["package.json", "vcpkg.json", "conanfile.txt", "CMakeLists.txt"], "answer": "1"},
+      {"type": "choice", "question": "在 CMake 中，哪个命令用于查找已安装的第三方库？", "options": ["search_package()", "find_package()", "lookup_library()", "import_target()"], "answer": "1"},
+      {"type": "truefalse", "question": " INTERFACE 可见性表示属性仅传递给依赖当前目标的其他目标，但不用于当前目标本身。", "answer": "true"}
+    ]
+  },
+  {
+    id: "ch17",
+    title: "第17章：调试与性能分析",
+    subtitle: "GDB 与 Valgrind",
+    icon: "🐛",
+    summary: "学习 GDB 调试、Valgrind 内存泄漏检测、AddressSanitizer 和 perf 性能分析",
+    version: "",
+    topics: ["GDB", "Valgrind", "AddressSanitizer", "perf"],
+    content: `
+<h2>GDB 基础</h2>
+<p><strong>GDB</strong>（GNU Debugger）是 C/C++ 程序最强大的调试工具。要使用 GDB，编译时必须加上 <code>-g</code> 选项生成调试信息。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 编译时添加调试信息（-g），关闭优化（-O0）
+g++ -std=c++20 -g -O0 main.cpp -o debug_app
+
+# 启动 GDB
+gdb ./debug_app
+
+# 常用启动方式
+gdb -q ./debug_app              # 静默启动（不显示版本信息）
+gdb ./debug_app core            # 分析 core dump
+gdb -p PID                      # 附加到运行中的进程</code></pre>
+</div>
+
+<h3>断点（Breakpoint）</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">GDB</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 设置断点
+(gdb) break main               # 在 main 函数处断点
+(gdb) break 42                 # 在第 42 行断点
+(gdb) break myfile.cpp:55      # 在指定文件的第 55 行
+(gdb) break Class::method      # 在成员函数处断点
+
+# 条件断点
+(gdb) break 30 if x > 100      # 仅当条件满足时中断
+(gdb) break func if i == 5
+
+# 临时断点（命中一次后自动删除）
+(gdb) tbreak 20
+
+# 查看和管理断点
+(gdb) info breakpoints         # 列出所有断点
+(gdb) delete 2                 # 删除编号为 2 的断点
+(gdb) disable 1                # 禁用断点
+(gdb) enable 1                 # 启用断点</code></pre>
+</div>
+
+<h3>单步执行</h3>
+<table>
+  <tr><th>命令</th><th>缩写</th><th>作用</th></tr>
+  <tr><td><code>run</code></td><td><code>r</code></td><td>开始运行程序</td></tr>
+  <tr><td><code>continue</code></td><td><code>c</code></td><td>继续运行直到下一个断点</td></tr>
+  <tr><td><code>next</code></td><td><code>n</code></td><td>单步执行（不进入函数内部）</td></tr>
+  <tr><td><code>step</code></td><td><code>s</code></td><td>单步执行（进入函数内部）</td></tr>
+  <tr><td><code>finish</code></td><td></td><td>运行直到当前函数返回</td></tr>
+  <tr><td><code>until</code></td><td></td><td>运行直到当前循环结束</td></tr>
+</table>
+
+<h3>查看变量</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">GDB</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>(gdb) print x                  # 打印变量 x 的值
+(gdb) print *ptr               # 打印指针指向的内容
+(gdb) print arr[5]@10          # 打印数组 arr 从第 5 个元素开始的 10 个值
+(gdb) print/x x                # 以十六进制打印
+(gdb) display x                # 每次断点都自动显示 x
+(gdb) info locals              # 显示所有局部变量
+(gdb) info args                # 显示函数参数
+
+# 查看调用栈
+(gdb) backtrace                # 显示完整调用栈（bt）
+(gdb) backtrace 10             # 只显示前 10 层
+(gdb) frame 2                  # 切换到第 2 层栈帧
+(gdb) up / down                # 在栈帧间上下移动</code></pre>
+</div>
+
+<h2>Valgrind 内存调试</h2>
+<p><strong>Valgrind</strong> 是一套内存调试和性能分析工具，最常用的子工具是 <code>memcheck</code>，用于检测内存错误。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 检测内存泄漏（程序运行较慢，属于正常）
+valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./myapp
+
+# 参数说明：
+# --leak-check=full      详细的泄漏信息
+# --show-leak-kinds=all  显示所有类型的泄漏
+# --track-origins=yes    追踪未初始化值的来源
+# --vgdb=yes             与 GDB 联合调试</code></pre>
+</div>
+
+<h3>Valgrind 能检测的错误</h3>
+<table>
+  <tr><th>错误类型</th><th>说明</th><th>示例</th></tr>
+  <tr><td>非法内存访问</td><td>读写未分配或已释放的内存</td><td><code>delete ptr; *ptr = 5;</code></td></tr>
+  <tr><td>使用未初始化内存</td><td>使用未初始化的变量做判断</td><td><code>int x; if (x > 0) ...</code></td></tr>
+  <tr><td>双重释放</td><td>同一块内存释放两次</td><td><code>delete p; delete p;</code></td></tr>
+  <tr><td>内存泄漏</td><td>分配后未释放且无法访问</td><td><code>new int(42); // 无对应 delete</code></td></tr>
+  <tr><td>不匹配的 new/delete</td><td><code>new[]</code> 配 <code>delete</code> 或反之</td><td><code>new int[10]; delete p;</code></td></tr>
+</table>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// 有内存泄漏的程序示例
+void leak_example() {
+    int* p = new int(42);      // 分配内存
+    // 忘记 delete，造成内存泄漏
+}
+
+int main() {
+    for (int i = 0; i < 1000; i++) {
+        leak_example();        // 每次调用泄漏 4 字节
+    }
+    return 0;
+}
+
+// Valgrind 输出示例：
+// ==12345== HEAP SUMMARY:
+// ==12345==     in use at exit: 4,000 bytes in 1,000 blocks
+// ==12345==   total heap usage: 1,000 allocs, 0 frees, 4,000 bytes allocated
+// ==12345== 
+// ==12345== 4,000 bytes in 1,000 blocks are definitely lost
+// ==12345==    at operator new (vg_replace_malloc.c:...)
+// ==12345==    by leak_example() (main.cpp:3)</code></pre>
+</div>
+
+<h2>AddressSanitizer (ASan)</h2>
+<p><strong>AddressSanitizer</strong> 是编译器内置的内存错误检测工具，比 Valgrind 速度快（约 2x  slowdown vs 10-20x），但需要在编译时启用。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># GCC/Clang 启用 AddressSanitizer
+g++ -std=c++20 -g -fsanitize=address -fno-omit-frame-pointer main.cpp -o asan_app
+
+# 运行（自动检测内存错误）
+./asan_app
+
+# 同时启用 LeakSanitizer（默认开启）和 UndefinedBehaviorSanitizer
+g++ -std=c++20 -g -fsanitize=address,undefined main.cpp -o full_san_app</code></pre>
+</div>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 ASan vs Valgrind</div>
+  <p><strong>ASan</strong>：编译时插入检查代码，速度快（~2x），能检测栈/堆溢出、use-after-free，推荐日常开发使用。<br><strong>Valgrind</strong>：无需重新编译，检测更细致（缓存行为、锁竞争），但速度慢（~10-20x），适合 CI 和深度分析。</p>
+</div>
+
+<h2>性能分析：perf</h2>
+<p><strong>perf</strong> 是 Linux 内置的性能分析工具，利用 CPU 硬件计数器采集数据，开销极小。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 基本性能分析
+perf record ./myapp              # 记录性能数据（生成 perf.data）
+perf report                      # 查看报告（热点函数排序）
+
+# 实时查看 top 函数
+perf top -p $(pgrep myapp)
+
+# 统计函数调用次数
+perf stat -e cycles,instructions,cache-misses ./myapp
+
+# 火焰图生成（需要 FlameGraph 工具）
+perf record -g ./myapp
+perf script | ./stackcollapse-perf.pl | ./flamegraph.pl > profile.svg</code></pre>
+</div>
+
+<h3>热点函数识别</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># perf report 输出示例
+# Overhead  Command   Shared Object       Symbol
+# ========  =======   ==============      ======
+#  45.23%   myapp     myapp               slow_function
+#  20.15%   myapp     libc.so.6           malloc
+#  15.80%   myapp     myapp               compute_hash
+#   8.40%   myapp     myapp               vector::push_back
+
+# 优化策略：
+# 1. 先优化占比最高的函数（45% 的函数加速 2x，整体加速 1.38x）
+# 2. 减少动态内存分配（malloc 占比高说明内存分配是瓶颈）
+# 3. 考虑算法复杂度优化（O(n^2) → O(n log n)）</code></pre>
+</div>
+
+<h2>综合调试技巧</h2>
+<div class="callout tip">
+  <div class="callout-icon">💡 调试流程建议</div>
+  <p>1. <strong>开发阶段</strong>：始终用 <code>-fsanitize=address,undefined</code> 编译，提前捕获内存错误<br>2. <strong>功能调试</strong>：GDB 打断点 + 单步执行，理解程序执行流程<br>3. <strong>内存泄漏</strong>：Valgrind memcheck 确认无泄漏<br>4. <strong>性能优化</strong>：perf record/report 找到热点函数，针对性优化</p>
+</div>
+
+<div class="callout warning">
+  <div class="callout-icon">⚠️ 常见陷阱</div>
+  <p>• 用 <code>-O0</code> 编译后再用 GDB 调试，优化后的代码（<code>-O2</code>）会导致行号偏移和变量被优化掉<br>• ASan 和 Valgrind 不能同时使用（ASan 会抢占 Valgrind 的内存拦截机制）<br>• 多线程程序调试时，用 <code>info threads</code> 和 <code>thread N</code> 切换线程</p>
+</div>
+`,
+    exercises: [
+      {"type": "choice", "question": "GDB 中，哪个命令用于单步执行且不进入函数内部？", "options": ["step", "next", "continue", "run"], "answer": "1"},
+      {"type": "truefalse", "question": "Valgrind 的 memcheck 工具可以检测内存泄漏和非法内存访问。", "answer": "true"},
+      {"type": "fillblank", "question": "编译时添加 ______ 选项可以为 GDB 生成调试信息。", "answer": "-g"},
+      {"type": "choice", "question": "AddressSanitizer 的运行时开销大约是？", "options": ["10-20 倍", "2 倍左右", "无开销", "50 倍以上"], "answer": "1"},
+      {"type": "choice", "question": "在 GDB 中查看完整调用栈的命令是？", "options": ["info stack", "backtrace", "show frames", "list"], "answer": "1"},
+      {"type": "truefalse", "question": "可以同时使用 AddressSanitizer 和 Valgrind 对同一程序进行内存检测。", "answer": "false"}
+    ]
+  },
+  {
+    id: "ch18",
+    title: "第18章：C++23 新特性（上）",
+    subtitle: "import std 与 std::format",
+    icon: "✨",
+    summary: "学习 C++23 标准库模块化导入和类型安全的字符串格式化",
+    version: "C++23",
+    topics: ["import std", "std::format", "模块", "编译速度"],
+    content: `
+<h2>标准库模块化：import std <span class="version-tag tag-cpp23">C++23</span></h2>
+<p>C++20 引入了<strong>模块（Modules）</strong>系统，而 C++23 进一步标准化了<strong>标准库模块</strong> <code>std</code>，让你可以用一行 <code>import std;</code> 替代数百行 <code>#include</code>。</p>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 模块的革命性意义</div>
+  <p>头文件（<code>#include</code>）是 C++ 编译慢的主要元凶。每个 <code>.cpp</code> 文件都要重复解析相同的头文件（如 <code>&lt;iostream&gt;</code> 可能被解析数千次）。模块通过<strong>一次性编译、二进制导入</strong>彻底解决了这个问题。</p>
+</div>
+
+<h3>import std vs #include 对比</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// === 旧方式：大量 #include ===
+#include &lt;iostream&gt;
+#include &lt;vector&gt;
+#include &lt;string&gt;
+#include &lt;map&gt;
+#include &lt;algorithm&gt;
+#include &lt;memory&gt;
+#include &lt;thread&gt;
+#include &lt;mutex&gt;
+#include &lt;chrono&gt;
+#include &lt;format&gt;
+// ... 可能还需要 20+ 个头文件
+
+// === C++23 新方式：一行搞定 ===
+import std;   // 导入整个标准库模块</code></pre>
+</div>
+
+<h3>编译速度提升原理</h3>
+<p>模块的核心优势在于<strong>预编译模块单元（BMIs）</strong>：</p>
+<table>
+  <tr><th></th><th>#include 模型</th><th>模块模型</th></tr>
+  <tr><td>解析方式</td><td>文本复制粘贴（每次重新解析）</td><td>导入预编译二进制（一次解析）</td></tr>
+  <tr><td>宏泄漏</td><td><code>#define</code> 会泄漏到后续代码</td><td>模块不导出宏（除非显式）</td></tr>
+  <tr><td>编译时间</td><td>O(n × m)，n=文件数, m=头文件数</td><td>O(n + m)，大幅缩短</td></tr>
+  <tr><td>重复定义</td><td>头文件保护/pragma once 仍可能出问题</td><td>模块单元唯一，天然安全</td></tr>
+</table>
+
+<div class="callout note">
+  <div class="callout-icon">📘 编译器支持状态</div>
+  <p>截至 2024 年，GCC 14+、Clang 17+ 和 MSVC 19.38+ 已支持标准库模块。编译时需要特殊参数：<br>• GCC: <code>g++ -std=c++23 -fmodules-ts</code><br>• MSVC: <code>cl /std:c++23 /EHsc /exportHeader</code></p>
+</div>
+
+<h2>std::format 深度解析 <span class="version-tag tag-cpp20">C++20</span></h2>
+<p><code>std::format</code> 是 C++20 引入的类型安全字符串格式化库，C++23 对其进行了扩展。它提供了类似 Python f-string 的语法，完全替代了不安全的 <code>printf</code> 和冗长的 <code>std::cout</code> 链式调用。</p>
+
+<h3>旧方式 vs 新方式对比</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// === 旧方式 1：printf（类型不安全！）===
+printf("Name: %s, Age: %d, Score: %.2f\n", name, age, score);
+// 如果 %s 对应了 int，运行时崩溃！编译器不检查。
+
+// === 旧方式 2：cout 链式调用（冗长）===
+std::cout << "Name: " << name << ", Age: " << age 
+          << ", Score: " << std::fixed << std::setprecision(2) << score << std::endl;
+
+// === C++20 新方式：std::format（类型安全 + 简洁）===
+import std;  // 或 #include &lt;format&gt;
+std::string s = std::format("Name: {}, Age: {}, Score: {:.2f}", name, age, score);
+
+// 直接输出
+std::print("Hello, {}!\n", "World");        // C++23
+cout << std::format("Hello, {}!\n", "World"); // C++20</code></pre>
+</div>
+
+<h3>格式化占位符语法</h3>
+<p><code>std::format</code> 使用 Python 风格的 <code>{}</code> 占位符，支持位置参数、格式说明和填充对齐。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include &lt;format&gt;
+#include &lt;iostream&gt;
+
+// 基本占位符
+std::format("{} + {} = {}", 1, 2, 3);        // "1 + 2 = 3"
+
+// 位置参数（可以重复使用）
+std::format("{0} {1} {0}", "A", "B");        // "A B A"
+
+// 命名参数（C++23 扩展）
+std::format("{name} is {age} years old", 
+            std::format_args(std::make_format_args("name", "Alice", "age", 30)));
+
+// === 格式说明符 ===
+// 整数格式
+std::format("{:d}", 42);         // "42"   十进制（默认）
+std::format("{:x}", 255);        // "ff"   十六进制
+std::format("{:X}", 255);        // "FF"   大写十六进制
+std::format("{:o}", 8);          // "10"   八进制
+std::format("{:b}", 5);          // "101"  二进制（C++23）
+
+// 宽度与对齐
+std::format("|{:10}|", 42);      // "|        42|"  右对齐（默认）
+std::format("|{:<10}|", 42);     // "|42        |"  左对齐
+std::format("|{:>10}|", 42);     // "|        42|"  右对齐
+std::format("|{:^10}|", 42);     // "|   42     |"  居中对齐
+std::format("|{:0>5}|", 42);     // "|00042|"       补零
+
+// 浮点数精度
+std::format("{:.2f}", 3.14159);  // "3.14"
+std::format("{:.5f}", 3.14159);  // "3.14159"
+std::format("{:.2e}", 1234.5);   // "1.23e+03" 科学计数法
+
+// 带符号
+std::format("{:+d}", 42);        // "+42"
+std::format("{: d}", 42);        // " 42"（正数前加空格）</code></pre>
+</div>
+
+<h3>类型安全的字符串插值</h3>
+<p><code>std::format</code> 在编译期检查格式字符串和参数的类型匹配，彻底杜绝了 <code>printf</code> 的类型不匹配崩溃问题。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// ✅ 编译通过：类型匹配
+std::format("Name: {}, Age: {}", std::string("Alice"), 25);
+
+// ❌ 编译错误：参数数量不匹配
+std::format("{} {}", 1);              // 错误：需要 2 个参数，只提供了 1 个
+
+// ❌ 编译错误：格式说明符与类型不匹配  
+std::format("{:d}", "hello");         // 错误：{:d} 需要整数，但提供了字符串
+
+// ❌ 编译错误：不支持的格式
+std::format("{:x}", 3.14);            // 错误：{:x} 不支持浮点数
+
+// ✅ 编译期检查意味着零运行时开销和零运行时错误风险
+// 格式字符串在编译期解析，生成最优化的格式化代码</code></pre>
+</div>
+
+<h3>自定义类型的格式化</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include &lt;format&gt;
+
+struct Point {
+    double x, y;
+};
+
+// 特化 std::formatter
+template&lt;&gt;
+struct std::formatter&lt;Point&gt; {
+    // 解析格式说明符
+    constexpr auto parse(std::format_parse_context& ctx) {
+        auto it = ctx.begin();
+        if (it != ctx.end() && *it != '}') {
+            // 可以解析自定义格式，如 "{.2f}"
+            throw std::format_error("Invalid format");
+        }
+        return it;
+    }
+
+    // 格式化输出
+    auto format(const Point& p, std::format_context& ctx) const {
+        return std::format_to(ctx.out(), "({:.2f}, {:.2f})", p.x, p.y);
+    }
+};
+
+// 使用
+Point p{3.14159, 2.71828};
+std::format("Point: {}", p);     // "Point: (3.14, 2.72)"</code></pre>
+</div>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 迁移建议</div>
+  <p>新项目直接使用 <code>import std;</code> + <code>std::format</code>。遗留代码可以逐步替换：<br>1. 先用 <code>std::format</code> 替换 <code>printf/sprintf</code><br>2. 再用 <code>import std;</code> 替换 <code>#include</code> 块<br>3. 使用 <code>std::print</code>（C++23）替代 <code>std::cout &lt;&lt;</code> 链</p>
+</div>
+`,
+    exercises: [
+      {"type": "choice", "question": "C++23 中导入整个标准库模块的语法是？", "options": ["#include &lt;std&gt;", "import std;", "using namespace std;", "module std;"], "answer": "1"},
+      {"type": "truefalse", "question": "std::format 在编译期检查格式字符串与参数的类型匹配。", "answer": "true"},
+      {"type": "fillblank", "question": "std::format 中，二进制格式说明符是 ______。", "answer": "b"},
+      {"type": "choice", "question": "模块相比 #include 的主要优势是？", "options": ["语法更短", "编译速度更快，无宏泄漏", "支持更多库", "运行时更快"], "answer": "1"},
+      {"type": "choice", "question": "std::format(\"{:>6}\", 42) 的输出是？", "options": ["42    ", "    42", "  42  ", "000042"], "answer": "1"},
+      {"type": "truefalse", "question": "C++23 的 import std 会导入标准库中的所有宏定义。", "answer": "false"}
+    ]
+  },
+  {
+    id: "ch19",
+    title: "第19章：C++23 新特性（下）",
+    subtitle: "高级特性",
+    icon: "🚀",
+    summary: "探索 deducing this、std::expected、flat_map、if consteval 和 std::mdspan",
+    version: "C++23",
+    topics: ["deducing this", "std::expected", "flat_map", "if consteval", "mdspan"],
+    content: `
+<h2>deducing this（显式对象参数）<span class="version-tag tag-cpp23">C++23</span></h2>
+<p>C++23 引入了<strong>显式对象参数（explicit object parameter）</strong>，允许将 <code>this</code> 作为函数的第一个参数显式声明。这项特性消除了 const/非 const 成员函数重载的样板代码。</p>
+
+<h3>问题：传统重载的冗余</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// 传统方式：为 const 和非 const 各写一个重载
+template&lt;typename T&gt;
+class Container {
+    std::vector&lt;T&gt; data_;
+public:
+    // 非 const 版本（可以修改返回值）
+    T& operator[](size_t i) { return data_[i]; }
+
+    // const 版本（只能读取）
+    const T& operator[](size_t i) const { return data_[i]; }
+
+    // 同样的重复适用于 front(), back(), begin(), end() ...
+    T& front() { return data_.front(); }
+    const T& front() const { return data_.front(); }
+
+    T& back() { return data_.back(); }
+    const T& back() const { return data_.back(); }
+    // 重复 2x 代码量！
+};</code></pre>
+</div>
+
+<h3>C++23 解决方案：deducing this</h3>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp23">C++23</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// C++23：一个函数替代所有重载
+template&lt;typename T&gt;
+class Container {
+    std::vector&lt;T&gt; data_;
+public:
+    // Self&& 根据调用者的 const 性自动推导
+    template&lt;typename Self&gt;
+    auto&& operator[](this Self&& self, size_t i) {
+        return std::forward&lt;Self&gt;(self).data_[i];
+    }
+
+    // 一个 front() 替代原来的两个重载
+    template&lt;typename Self&gt;
+    auto&& front(this Self&& self) {
+        return std::forward&lt;Self&gt;(self).data_.front();
+    }
+
+    template&lt;typename Self&gt;
+    auto&& back(this Self&& self) {
+        return std::forward&lt;Self&gt;(self).data_.back();
+    }
+};
+
+// 使用：自动选择正确的版本
+Container&lt;int&gt; c;
+c[0] = 42;              // 调用非 const 版本（返回 int&）
+const auto& cc = c;
+int x = cc[0];          // 调用 const 版本（返回 const int&）</code></pre>
+</div>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 工作原理</div>
+  <p>当调用 <code>c[0]</code> 时（<code>c</code> 是非 const），<code>Self</code> 推导为 <code>Container&lt;int&gt;&</code>，返回 <code>int&</code>。<br>当调用 <code>cc[0]</code> 时（<code>cc</code> 是 const），<code>Self</code> 推导为 <code>const Container&lt;int&gt;&</code>，返回 <code>const int&</code>。</p>
+</div>
+
+<h2>std::expected <span class="version-tag tag-cpp23">C++23</span></h2>
+<p><strong><code>std::expected&lt;T, E&gt;</strong></code> 是一种新的错误处理方式，类似于函数式编程中的 "Either" 单子。它在不抛异常的情况下表示"成功值 T 或错误值 E"。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp23">C++23</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include &lt;expected&gt;
+#include &lt;string&gt;
+
+// 返回成功值 int 或错误值 std::string
+std::expected&lt;int, std::string&gt; divide(int a, int b) {
+    if (b == 0) {
+        return std::unexpected("Division by zero");
+    }
+    return a / b;  // 隐式构造为 expected（成功分支）
+}
+
+// 使用
+auto result = divide(10, 2);
+if (result) {                        // 检查是否成功
+    std::cout &lt;&lt; "Result: " &lt;&lt; *result;  // 解引用获取值
+} else {
+    std::cout &lt;&lt; "Error: " &lt;&lt; result.error();
+}
+
+// 链式操作
+auto r2 = divide(10, 2)
+    .and_then([](int x) { return divide(x, 5); })   // 成功后继续
+    .or_else([](auto& err) {                         // 失败后恢复
+        std::cout &lt;&lt; "Fallback: " &lt;&lt; err;
+        return std::expected&lt;int, std::string&gt;(0);
+    })
+    .transform([](int x) { return x * 2; });         // 成功时变换值</code></pre>
+</div>
+
+<h3>std::expected vs 异常 vs 错误码</h3>
+<table>
+  <tr><th></th><th>异常</th><th>错误码</th><th>std::expected</th></tr>
+  <tr><td>语法开销</td><td>低（try/catch）</td><td>高（手动检查）</td><td>中（and_then/or_else）</td></tr>
+  <tr><td>运行时开销</td><td>高（异常表、栈展开）</td><td>零</td><td>零（优化后与错误码等价）</td></tr>
+  <tr><td>是否显式</td><td>隐式传播</td><td>完全显式</td><td>显式但流畅</td></tr>
+  <tr><td>适用场景</td><td>真·异常情况</td><td>C 接口、嵌入式</td><td>预期内的错误处理</td></tr>
+</table>
+
+<h2>std::flat_map / std::flat_set <span class="version-tag tag-cpp23">C++23</span></h2>
+<p><code>std::flat_map</code> 和 <code>std::flat_set</code> 是 C++23 新增的关联容器，用<strong>有序 vector</strong> 替代了传统的<strong>红黑树</strong>实现，牺牲 O(log n) 的插入换来了更好的<strong>数据局部性</strong>和<strong>缓存命中率</strong>。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp23">C++23</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include &lt;flat_map&gt;
+#include &lt;flat_set&gt;
+
+// flat_map：底层是有序的 std::vector&lt;std::pair&lt;Key, T&gt;&gt;
+std::flat_map&lt;std::string, int&gt; scores;
+
+// 接口与 std::map 相同
+scores["Alice"] = 95;
+scores["Bob"] = 87;
+scores["Charlie"] = 92;
+
+// 查找仍然是 O(log n)，但通过二分查找
+auto it = scores.find("Bob");   // 二分查找
+
+// 遍历：内存连续，缓存友好
+for (const auto& [name, score] : scores) {
+    std::cout &lt;&lt; name &lt;&lt; ": " &lt;&lt; score &lt;&lt; "\n";
+}
+
+// flat_set：底层是有序 vector
+std::flat_set&lt;int&gt; ids = {3, 1, 4, 1, 5};
+// ids = {1, 3, 4, 5}（自动去重并排序）</code></pre>
+</div>
+
+<h3>性能对比：flat_map vs map</h3>
+<table>
+  <tr><th>操作</th><th>std::map（红黑树）</th><th>std::flat_map（vector）</th></tr>
+  <tr><td>插入</td><td>O(log n)</td><td>O(n)（需移动元素）</td></tr>
+  <tr><td>查找</td><td>O(log n)，缓存不友好</td><td>O(log n)，缓存极友好</td></tr>
+  <tr><td>遍历</td><td>指针跳转，cache miss 多</td><td>内存连续，预取高效</td></tr>
+  <tr><td>内存</td><td>每个节点有指针开销</td><td>仅 key+value，无额外开销</td></tr>
+  <tr><td>适用场景</td><td>频繁插入删除</td><td>少量修改 + 大量查找/遍历</td></tr>
+</table>
+
+<div class="callout note">
+  <div class="callout-icon">📘 数据局部性原理</div>
+  <p>CPU 从内存读取数据时，会一次性加载整个<strong>缓存行</strong>（通常 64 字节）。<code>flat_map</code> 的数据连续存储，一次缓存加载可以包含多个元素；而 <code>map</code> 的节点散落在堆上，每个节点访问都可能触发一次主内存访问（~100ns vs ~1ns L1 cache）。</p>
+</div>
+
+<h2>if consteval <span class="version-tag tag-cpp23">C++23</span></h2>
+<p><code>if consteval</code> 是 C++23 引入的<strong>编译期条件分支</strong>，用于区分代码是在编译期求值（<code>consteval</code> 上下文）还是运行期执行。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp23">C++23</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// 一个函数同时支持编译期和运行期
+constexpr int log2(int n) {
+    if consteval {           // 仅在编译期求值时执行此分支
+        // 编译期可以使用 assert
+        static_assert(n > 0);  // 编译期断言
+        int result = 0;
+        while (n > 1) {
+            n /= 2;
+            result++;
+        }
+        return result;
+    } else {                 // 仅在运行期执行此分支
+        // 运行期可以使用异常
+        if (n <= 0) throw std::invalid_argument("n must be positive");
+        int result = 0;
+        while (n > 1) {
+            n /= 2;
+            result++;
+        }
+        return result;
+    }
+}
+
+// 编译期调用
+constexpr auto c1 = log2(1024);    // OK，编译期求值
+// auto r1 = log2(x);              // 运行期调用，异常可用</code></pre>
+</div>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 与 if constexpr 的区别</div>
+  <p><code>if constexpr</code> 在<strong>实例化时</strong>丢弃分支（模板编译阶段）。<code>if consteval</code> 根据<strong>调用上下文</strong>选择分支（编译期求值 vs 运行期）。两者互补：<code>if constexpr</code> 用于模板控制，<code>if consteval</code> 用于编译期/运行期双路实现。</p>
+</div>
+
+<h2>std::mdspan <span class="version-tag tag-cpp23">C++23</span></h2>
+<p><strong><code>std::mdspan</strong></code>（multi-dimensional span）是一个<strong>非拥有的多维数组视图</strong>，类似于 <code>std::span</code> 的多维扩展。它让你可以用多维索引语法操作底层的一维数组。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp23">C++23</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include &lt;mdspan&gt;
+
+// 底层一维数组
+int data[24] = {
+     1,  2,  3,  4,     // 第 0 行
+     5,  6,  7,  8,     // 第 1 行
+     9, 10, 11, 12,     // 第 2 行
+    13, 14, 15, 16,     // 第 3 行
+    17, 18, 19, 20,     // 第 4 行
+    21, 22, 23, 24      // 第 5 行
+};
+
+// 创建 2D 视图：6 行 × 4 列
+std::mdspan&lt;int, std::extents&lt;size_t, 6, 4&gt;&gt; matrix(data);
+
+// 使用二维索引访问（底层是一维数组）
+matrix[2, 3] = 100;     // 第 3 行第 4 列（从 0 开始）
+std::cout &lt;&lt; matrix[0, 0];   // 1
+std::cout &lt;&lt; matrix[1, 2];   // 7
+
+// 动态维度（运行时确定大小）
+std::mdspan&lt;int, std::dextents&lt;size_t, 2&gt;&gt; dyn_matrix(data, 3, 8);
+// 3 行 × 8 列的视图
+
+// 获取维度信息
+matrix.extent(0);       // 第 0 维大小 = 6（行数）
+matrix.extent(1);       // 第 1 维大小 = 4（列数）
+matrix.rank();          // 维度数 = 2
+
+// 不同布局（内存排列方式）
+std::layout_left::mapping&lt;std::dextents&lt;size_t, 2&gt;&gt; left_layout(4, 6);
+// layout_left  = Fortran 风格（列优先）
+// layout_right = C 风格（行优先，默认）</code></pre>
+</div>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 mdspan 的应用场景</div>
+  <p>• <strong>科学计算</strong>：矩阵运算、有限元分析<br>• <strong>图像处理</strong>：将一维像素缓冲区视为 2D 图像<br>• <strong>游戏开发</strong>：3D 网格数据的可视化操作<br>• <strong>机器学习</strong>：多维张量视图的零拷贝操作</p>
+</div>
+`,
+    exercises: [
+      {"type": "choice", "question": "deducing this 主要解决了什么问题？", "options": ["虚函数调用开销", "const/非 const 成员函数重复定义", "模板编译错误", "内存管理"], "answer": "1"},
+      {"type": "truefalse", "question": "std::flat_map 的底层实现是有序 vector 而非红黑树。", "answer": "true"},
+      {"type": "fillblank", "question": "std::expected中 E 表示 ______。", "answer": "错误类型"},
+      {"type": "choice", "question": "if consteval 与 if constexpr 的主要区别是？", "options": ["没有区别", "if consteval 根据调用上下文选择分支，if constexpr 在模板实例化时丢弃分支", "if consteval 更快", "if constexpr 是 C++23 特性"], "answer": "1"},
+      {"type": "choice", "question": "std::mdspan 是什么类型的数据结构？", "options": ["拥有的多维数组", "非拥有的多维数组视图", "动态数组", "链表"], "answer": "1"},
+      {"type": "truefalse", "question": "std::flat_map 的插入时间复杂度是 O(log n)。", "answer": "false"}
+    ]
+  },
+  {
+    id: "ch20",
+    title: "第20章：从零构建 - 综合项目实战",
+    subtitle: "命令行计算器",
+    icon: "🏗️",
+    summary: "综合运用 C++20/23 特性，从零构建一个支持变量、函数和复杂表达式的命令行计算器",
+    version: "C++20/23",
+    topics: ["项目实战", "计算器", "CMake", "综合运用"],
+    content: `
+<h2>项目需求</h2>
+<p>我们将构建一个功能完善的<strong>命令行表达式计算器</strong>，支持以下特性：</p>
+<ul>
+  <li><strong>基本运算</strong>：加减乘除、括号优先级</li>
+  <li><strong>变量系统</strong>：定义变量（<code>x = 10 + 5</code>），后续表达式中复用</li>
+  <li><strong>内置函数</strong>：<code>sin</code>, <code>cos</code>, <code>sqrt</code>, <code>abs</code>, <code>pow</code></li>
+  <li><strong>错误处理</strong>：语法错误提示、除零保护、未定义变量检测</li>
+  <li><strong>REPL 交互</strong>：读取-求值-输出循环，支持命令历史</li>
+</ul>
+
+<div class="callout tip">
+  <div class="callout-icon">💡 技术选型</div>
+  <p>• 词法分析：手写的状态机<br>• 语法分析：递归下降解析器<br>• 存储：std::unordered_map 存储变量<br>• 错误处理：std::expected（C++23）或异常<br>• 格式化输出：std::format（C++20）</p>
+</div>
+
+<h2>项目结构</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Text</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>calc/
+├── CMakeLists.txt
+├── src/
+│   ├── main.cpp           # 入口：REPL 循环
+│   ├── lexer.h/.cpp       # 词法分析器（Token 序列）
+│   ├── parser.h/.cpp      # 语法分析器（AST 构建）
+│   ├── evaluator.h/.cpp   # AST 求值器
+│   └── environment.h/.cpp # 变量存储环境
+└── tests/
+    └── test_calc.cpp      # 测试用例</code></pre>
+</div>
+
+<h2>CMakeLists.txt</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">cmake</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>cmake_minimum_required(VERSION 3.25)
+project(CalcPP VERSION 1.0 LANGUAGES CXX)
+
+# 需要 C++23（for std::expected, std::print, import std）
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# 启用模块支持（C++20 Modules）
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+
+add_executable(calc
+    src/main.cpp
+    src/lexer.cpp
+    src/parser.cpp
+    src/evaluator.cpp
+    src/environment.cpp
+)
+
+target_include_directories(calc PRIVATE src)
+
+# 编译选项
+if(MSVC)
+    target_compile_options(calc PRIVATE /W4)
+else()
+    target_compile_options(calc PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# 测试
+enable_testing()
+add_executable(test_calc tests/test_calc.cpp
+    src/lexer.cpp
+    src/parser.cpp
+    src/evaluator.cpp
+    src/environment.cpp
+)
+target_include_directories(test_calc PRIVATE src)
+add_test(NAME CalcTest COMMAND test_calc)</code></pre>
+</div>
+
+<h2>lexer.h - 词法分析器</h2>
+<p>词法分析器将输入字符串拆分为 Token 序列（数字、运算符、标识符等）。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#pragma once
+#include &lt;string&gt;
+#include &lt;vector&gt;
+#include &lt;optional&gt;
+#include &lt;format&gt;
+
+// Token 类型枚举
+enum class TokenType {
+    Number,      // 数字（整数或浮点数）
+    Plus,        // +
+    Minus,       // -
+    Multiply,    // *
+    Divide,      // /
+    Power,       // ^
+    LParen,      // (
+    RParen,      // )
+    Assign,      // =
+    Identifier,  // 变量名或函数名
+    Comma,       // ,
+    Eof,         // 文件结束
+};
+
+struct Token {
+    TokenType type;
+    std::string lexeme;        // 原始文本
+    double numericValue = 0;   // 如果是数字，存储其值
+    size_t line = 1;
+    size_t column = 1;
+};
+
+class Lexer {
+    std::string_view source_;
+    size_t pos_ = 0;
+    size_t line_ = 1;
+    size_t col_ = 1;
+
+    char peek() const;
+    char advance();
+    bool isAtEnd() const;
+    void skipWhitespace();
+    std::optional&lt;Token&gt; readNumber();
+    std::optional&lt;Token&gt; readIdentifier();
+
+public:
+    explicit Lexer(std::string_view source);
+    std::vector&lt;Token&gt; tokenize();
+};</code></pre>
+</div>
+
+<h2>lexer.cpp - 实现</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include "lexer.h"
+#include &lt;cctype&gt;
+
+Lexer::Lexer(std::string_view source) : source_(source) {}
+
+char Lexer::peek() const {
+    return isAtEnd() ? '\0' : source_[pos_];
+}
+
+char Lexer::advance() {
+    char c = source_[pos_++];
+    if (c == '\n') { line_++; col_ = 1; }
+    else { col_++; }
+    return c;
+}
+
+bool Lexer::isAtEnd() const { return pos_ >= source_.size(); }
+
+void Lexer::skipWhitespace() {
+    while (std::isspace(peek())) advance();
+}
+
+std::optional&lt;Token&gt; Lexer::readNumber() {
+    size_t start = pos_;
+    size_t startCol = col_;
+    bool hasDot = false;
+
+    while (std::isdigit(peek()) || (peek() == '.' && !hasDot)) {
+        if (peek() == '.') hasDot = true;
+        advance();
+    }
+
+    std::string numStr(source_.substr(start, pos_ - start));
+    return Token{TokenType::Number, numStr, std::stod(numStr), line_, startCol};
+}
+
+std::optional&lt;Token&gt; Lexer::readIdentifier() {
+    size_t start = pos_;
+    size_t startCol = col_;
+
+    while (std::isalnum(peek()) || peek() == '_') advance();
+
+    std::string name(source_.substr(start, pos_ - start));
+    return Token{TokenType::Identifier, name, 0, line_, startCol};
+}
+
+std::vector&lt;Token&gt; Lexer::tokenize() {
+    std::vector&lt;Token&gt; tokens;
+
+    while (!isAtEnd()) {
+        skipWhitespace();
+        if (isAtEnd()) break;
+
+        char c = peek();
+        size_t ccol = col_;
+
+        if (std::isdigit(c)) {
+            tokens.push_back(*readNumber());
+        } else if (std::isalpha(c) || c == '_') {
+            tokens.push_back(*readIdentifier());
+        } else {
+            advance(); // consume the char
+            switch (c) {
+                case '+': tokens.push_back({TokenType::Plus, "+", 0, line_, ccol}); break;
+                case '-': tokens.push_back({TokenType::Minus, "-", 0, line_, ccol}); break;
+                case '*': tokens.push_back({TokenType::Multiply, "*", 0, line_, ccol}); break;
+                case '/': tokens.push_back({TokenType::Divide, "/", 0, line_, ccol}); break;
+                case '^': tokens.push_back({TokenType::Power, "^", 0, line_, ccol}); break;
+                case '(': tokens.push_back({TokenType::LParen, "(", 0, line_, ccol}); break;
+                case ')': tokens.push_back({TokenType::RParen, ")", 0, line_, ccol}); break;
+                case '=': tokens.push_back({TokenType::Assign, "=", 0, line_, ccol}); break;
+                case ',': tokens.push_back({TokenType::Comma, ",", 0, line_, ccol}); break;
+                default:
+                    throw std::runtime_error(
+                        std::format("Unexpected character '{}' at line {}, col {}",
+                                   c, line_, ccol));
+            }
+        }
+    }
+
+    tokens.push_back({TokenType::Eof, "", 0, line_, col_});
+    return tokens;
+}</code></pre>
+</div>
+
+<h2>parser.h - 语法分析器</h2>
+<p>使用<strong>递归下降</strong>方法构建抽象语法树（AST）。支持运算符优先级和括号。</p>
+
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#pragma once
+#include "lexer.h"
+#include &lt;memory&gt;
+#include &lt;vector&gt;
+
+// AST 节点基类
+struct Expr {
+    virtual ~Expr() = default;
+};
+
+// 数字字面量
+struct NumberExpr : Expr {
+    double value;
+    explicit NumberExpr(double v) : value(v) {}
+};
+
+// 变量引用
+struct VariableExpr : Expr {
+    std::string name;
+    explicit VariableExpr(std::string n) : name(std::move(n)) {}
+};
+
+// 二元运算
+struct BinaryExpr : Expr {
+    TokenType op;
+    std::unique_ptr&lt;Expr&gt; left;
+    std::unique_ptr&lt;Expr&gt; right;
+    BinaryExpr(TokenType o, std::unique_ptr&lt;Expr&gt; l, std::unique_ptr&lt;Expr&gt; r)
+        : op(o), left(std::move(l)), right(std::move(r)) {}
+};
+
+// 一元运算（负号）
+struct UnaryExpr : Expr {
+    TokenType op;
+    std::unique_ptr&lt;Expr&gt; operand;
+    UnaryExpr(TokenType o, std::unique_ptr&lt;Expr&gt; expr)
+        : op(o), operand(std::move(expr)) {}
+};
+
+// 函数调用
+struct CallExpr : Expr {
+    std::string funcName;
+    std::vector&lt;std::unique_ptr&lt;Expr&gt;&gt; args;
+    CallExpr(std::string name, std::vector&lt;std::unique_ptr&lt;Expr&gt;&gt; a)
+        : funcName(std::move(name)), args(std::move(a)) {}
+};
+
+// 赋值语句
+struct AssignExpr : Expr {
+    std::string varName;
+    std::unique_ptr&lt;Expr&gt; value;
+    AssignExpr(std::string name, std::unique_ptr&lt;Expr&gt; v)
+        : varName(std::move(name)), value(std::move(v)) {}
+};
+
+class Parser {
+    std::vector&lt;Token&gt; tokens_;
+    size_t pos_ = 0;
+
+    const Token& peek() const;
+    const Token& previous() const;
+    bool check(TokenType type) const;
+    bool match(std::initializer_list&lt;TokenType&gt; types);
+    const Token& consume(TokenType type, const std::string& msg);
+
+    std::unique_ptr&lt;Expr&gt; expression();   // 赋值
+    std::unique_ptr&lt;Expr&gt; equality();     // 最低优先级
+    std::unique_ptr&lt;Expr&gt; comparison();
+    std::unique_ptr&lt;Expr&gt; term();
+    std::unique_ptr&lt;Expr&gt; factor();
+    std::unique_ptr&lt;Expr&gt; power();
+    std::unique_ptr&lt;Expr&gt; unary();
+    std::unique_ptr&lt;Expr&gt; primary();      // 最高优先级
+
+public:
+    explicit Parser(std::vector&lt;Token&gt; tokens);
+    std::unique_ptr&lt;Expr&gt; parse();
+};</code></pre>
+</div>
+
+<h2>evaluator.h/.cpp - 求值器</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#pragma once
+#include "parser.h"
+#include "environment.h"
+#include &lt;cmath&gt;
+#include &lt;format&gt;
+
+class Evaluator {
+    Environment& env_;
+
+    double evalExpr(const Expr* expr);
+    double evalBinary(const BinaryExpr* expr);
+    double evalUnary(const UnaryExpr* expr);
+    double evalCall(const CallExpr* expr);
+
+public:
+    explicit Evaluator(Environment& env) : env_(env) {}
+    double evaluate(const Expr* expr);
+};
+
+// evaluator.cpp
+#include "evaluator.h"
+
+double Evaluator::evalBinary(const BinaryExpr* expr) {
+    double left = evalExpr(expr->left.get());
+    double right = evalExpr(expr->right.get());
+
+    switch (expr->op) {
+        case TokenType::Plus:  return left + right;
+        case TokenType::Minus: return left - right;
+        case TokenType::Multiply: return left * right;
+        case TokenType::Divide: 
+            if (right == 0.0) throw std::runtime_error("Division by zero");
+            return left / right;
+        case TokenType::Power: return std::pow(left, right);
+        default: throw std::runtime_error("Unknown binary operator");
+    }
+}
+
+double Evaluator::evalUnary(const UnaryExpr* expr) {
+    double val = evalExpr(expr->operand.get());
+    if (expr->op == TokenType::Minus) return -val;
+    return val;
+}
+
+double Evaluator::evalCall(const CallExpr* expr) {
+    std::vector&lt;double&gt; argVals;
+    for (const auto& arg : expr->args) {
+        argVals.push_back(evalExpr(arg.get()));
+    }
+
+    const auto& name = expr->funcName;
+    if (name == "sin" && argVals.size() == 1) return std::sin(argVals[0]);
+    if (name == "cos" && argVals.size() == 1) return std::cos(argVals[0]);
+    if (name == "sqrt" && argVals.size() == 1) {
+        if (argVals[0] < 0) throw std::runtime_error("sqrt of negative number");
+        return std::sqrt(argVals[0]);
+    }
+    if (name == "abs" && argVals.size() == 1) return std::abs(argVals[0]);
+    if (name == "pow" && argVals.size() == 2) return std::pow(argVals[0], argVals[1]);
+
+    throw std::runtime_error(std::format("Unknown function '{}'", name));
+}
+
+double Evaluator::evalExpr(const Expr* expr) {
+    if (auto* n = dynamic_cast&lt;const NumberExpr*&gt;(expr)) return n->value;
+    if (auto* v = dynamic_cast&lt;const VariableExpr*&gt;(expr)) {
+        auto val = env_.get(v->name);
+        if (!val) throw std::runtime_error(std::format("Undefined variable '{}'", v->name));
+        return *val;
+    }
+    if (auto* b = dynamic_cast&lt;const BinaryExpr*&gt;(expr)) return evalBinary(b);
+    if (auto* u = dynamic_cast&lt;const UnaryExpr*&gt;(expr)) return evalUnary(u);
+    if (auto* c = dynamic_cast&lt;const CallExpr*&gt;(expr)) return evalCall(c);
+    if (auto* a = dynamic_cast&lt;const AssignExpr*&gt;(expr)) {
+        double val = evalExpr(a->value.get());
+        env_.set(a->varName, val);
+        return val;
+    }
+    throw std::runtime_error("Unknown expression type");
+}
+
+double Evaluator::evaluate(const Expr* expr) {
+    return evalExpr(expr);
+}</code></pre>
+</div>
+
+<h2>environment.h - 变量环境</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#pragma once
+#include &lt;string&gt;
+#include &lt;unordered_map&gt;
+#include &lt;optional&gt;
+
+class Environment {
+    std::unordered_map&lt;std::string, double&gt; variables_;
+
+public:
+    void set(const std::string& name, double value) {
+        variables_[name] = value;
+    }
+
+    std::optional&lt;double&gt; get(const std::string& name) const {
+        auto it = variables_.find(name);
+        if (it != variables_.end()) return it->second;
+        return std::nullopt;
+    }
+
+    bool has(const std::string& name) const {
+        return variables_.contains(name);  // C++20
+    }
+
+    void clear() { variables_.clear(); }
+};</code></pre>
+</div>
+
+<h2>main.cpp - REPL 入口</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp23">C++23</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>#include &lt;iostream&gt;
+#include &lt;string&gt;
+#include &lt;format&gt;
+#include "lexer.h"
+#include "parser.h"
+#include "evaluator.h"
+#include "environment.h"
+
+void printWelcome() {
+    std::cout &lt;&lt; "╔═══════════════════════════════════╗\n";
+    std::cout &lt;&lt; "║      Calc++ - Expression Calc     ║\n";
+    std::cout &lt;&lt; "║   Type 'quit' to exit, 'vars'     ║\n";
+    std::cout &lt;&lt; "║   to list variables               ║\n";
+    std::cout &lt;&lt; "╚═══════════════════════════════════╝\n\n";
+}
+
+int main() {
+    printWelcome();
+    Environment env;
+
+    while (true) {
+        std::cout &lt;&lt; "&gt; ";
+        std::string line;
+        if (!std::getline(std::cin, line)) break;
+
+        if (line == "quit" || line == "exit") break;
+        if (line.empty()) continue;
+
+        try {
+            Lexer lexer(line);
+            auto tokens = lexer.tokenize();
+            Parser parser(std::move(tokens));
+            auto ast = parser.parse();
+            Evaluator eval(env);
+            double result = eval.evaluate(ast.get());
+
+            std::cout &lt;&lt; "= " &lt;&lt; result &lt;&lt; "\n";
+        } catch (const std::exception& e) {
+            std::cout &lt;&lt; "[Error] " &lt;&lt; e.what() &lt;&lt; "\n";
+        }
+    }
+
+    return 0;
+}</code></pre>
+</div>
+
+<h2>运行演示</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">Bash</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code># 构建
+cmake -B build -S .
+cmake --build build
+
+# 运行
+./build/calc
+
+# ╔═══════════════════════════════════╗
+# ║      Calc++ - Expression Calc     ║
+# ╚═══════════════════════════════════╝
+# 
+# &gt; 2 + 3 * 4
+# = 14
+# &gt; (2 + 3) * 4
+# = 20
+# &gt; x = 10 + 5
+# = 15
+# &gt; x * 2
+# = 30
+# &gt; sqrt(144) + pow(2, 3)
+# = 20
+# &gt; sin(3.14159 / 2)
+# = 1
+# &gt; y = 5 / 0
+# [Error] Division by zero</code></pre>
+</div>
+
+<h2>测试用例</h2>
+<div class="code-block">
+  <div class="code-header">
+    <div class="code-header-left"><span class="code-lang">C++</span><span class="version-tag tag-cpp20">C++20</span></div>
+    <div class="code-actions"><button class="code-btn copy-btn">📋 复制</button></div>
+  </div>
+  <pre><code>// tests/test_calc.cpp
+#include &lt;cassert&gt;
+#include &lt;cmath&gt;
+#include &lt;format&gt;
+#include "../src/lexer.h"
+#include "../src/parser.h"
+#include "../src/evaluator.h"
+#include "../src/environment.h"
+
+double evalExpr(const std::string& input) {
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
+    Parser parser(std::move(tokens));
+    auto ast = parser.parse();
+    Environment env;
+    Evaluator eval(env);
+    return eval.evaluate(ast.get());
+}
+
+int main() {
+    // 基本运算
+    assert(evalExpr("2 + 3") == 5.0);
+    assert(evalExpr("10 - 4") == 6.0);
+    assert(evalExpr("3 * 7") == 21.0);
+    assert(evalExpr("15 / 3") == 5.0);
+    assert(std::abs(evalExpr("2 ^ 3") - 8.0) &lt; 0.001);
+
+    // 优先级
+    assert(evalExpr("2 + 3 * 4") == 14.0);
+    assert(evalExpr("(2 + 3) * 4") == 20.0);
+    assert(evalExpr("10 - 2 - 3") == 5.0);  // 左结合
+
+    // 一元负号
+    assert(evalExpr("-5 + 3") == -2.0);
+    assert(evalExpr("-(-3)") == 3.0);
+
+    // 函数调用
+    assert(evalExpr("sqrt(16)") == 4.0);
+    assert(evalExpr("abs(-5)") == 5.0);
+    assert(std::abs(evalExpr("sin(0)") - 0.0) &lt; 0.001);
+    assert(std::abs(evalExpr("pow(2, 3)") - 8.0) &lt; 0.001);
+
+    // 变量赋值和引用
+    {
+        Lexer lexer("x = 10 + 5; x * 2");
+        auto tokens = lexer.tokenize();
+        Environment env;
+        Evaluator eval(env);
+
+        // 第一行：赋值
+        Parser p1(std::vector(tokens.begin(), 
+              std::find_if(tokens.begin(), tokens.end(), 
+                  [](const Token& t) { return t.lexeme == ";"; }) + 1));
+        auto ast1 = p1.parse();
+        eval.evaluate(ast1.get());
+
+        // 检查变量
+        auto val = env.get("x");
+        assert(val.has_value() && *val == 15.0);
+    }
+
+    std::cout &lt;&lt; "All tests passed!\n";
+    return 0;
+}</code></pre>
+</div>
+
+<h2>学到的知识点总结</h2>
+<div class="callout tip">
+  <div class="callout-icon">💡 本章节综合运用</div>
+  <p>• <strong>C++20</strong>：concept（可添加）、结构化绑定、contains()、format<br>• <strong>C++23</strong>：import std（可选）、std::expected 可替换异常处理<br>• <strong>OOP</strong>：继承（Expr AST 节点体系）、多态（dynamic_cast）<br>• <strong>STL</strong>：vector、unordered_map、unique_ptr、optional<br>• <strong>CMake</strong>：Target-based 配置、测试集成<br>• <strong>工程实践</strong>：头文件组织、分离编译、单元测试</p>
+</div>
+
+<div class="callout note">
+  <div class="callout-icon">📘 扩展方向</div>
+  <p>• 添加更多数学函数（log, exp, tan, asin 等）<br>• 支持复数运算（std::complex）<br>• 添加命令历史（GNU readline）<br>• 实现用户自定义函数（lambda 存储）<br>• 将解析器改为 Pratt Parser 支持更多运算符</p>
+</div>
+`,
+    exercises: []
+  }
 ];
