@@ -6,6 +6,7 @@
   <title>C++ 全栈教程</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dark-theme.css">
+  <link rel="stylesheet" href="css/gamification.css">
 </head>
 <body>
   <!-- 顶部导航栏 -->
@@ -32,6 +33,7 @@
 
   <!-- 侧边栏 -->
   <aside class="sidebar" id="sidebar">
+    <div id="progressWidget"></div>
     <div class="sidebar-header">章节目录</div>
     <div id="chapterList"></div>
   </aside>
@@ -42,7 +44,7 @@
       <div class="loading">加载中...</div>
     </div>
     <div class="footer">
-      C++ 全栈教程 · 从入门到现代 C++20 · 持续更新中
+      C++ 全栈教程 · 从入门到现代 C++23 · 持续更新中
     </div>
   </main>
 
@@ -50,17 +52,24 @@
   <button class="back-to-top" id="backToTop">↑</button>
 
   <!-- 关于弹窗 -->
-  <div id="aboutModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center;">
-    <div style="background:var(--bg-primary); padding:32px; border-radius:var(--radius-lg); max-width:480px; border:1px solid var(--border); box-shadow:var(--shadow-md);">
-      <h2 style="margin-bottom:16px;">关于 C++ 全栈教程</h2>
-      <p style="margin-bottom:12px;">本教程系统覆盖 C++ 编程语言，从基础语法到现代 C++20 特性，共 16 章完整内容，包含 Make/CMake 构建系统。</p>
-      <p style="margin-bottom:12px;">包含丰富的代码示例、语法高亮、互动练习、标准版本标注和实用技巧。</p>
-      <p style="margin-bottom:20px; color:var(--text-muted);">版本：v2.0 · 更新日期：2026-05-05</p>
-      <button onclick="document.getElementById('aboutModal').style.display='none';" style="padding:8px 20px; border-radius:var(--radius); border:1px solid var(--border); background:var(--accent); color:white; cursor:pointer; font-weight:500;">关闭</button>
+  <div id="aboutModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>关于 C++ 全栈教程</h2>
+        <button class="modal-close" onclick="document.getElementById('aboutModal').style.display='none';" aria-label="关闭">✕</button>
+      </div>
+      <p>本教程系统覆盖 C++ 编程语言，从基础语法到现代 C++23 特性，共 20 章完整内容，包含 CMake/vcpkg 构建系统。</p>
+      <p>包含丰富的代码示例、语法高亮、互动练习、WebAssembly 在线编译、内存可视化、标准版本标注和实用技巧。</p>
+      <p class="modal-version">版本：v3.0 · 更新日期：2026-07-09</p>
     </div>
   </div>
 
   <script src="js/chapters.js"></script>
+  <script src="js/progress.js"></script>
+  <script src="js/gamification.js"></script>
+  <script src="js/wasm-editor.js"></script>
+  <script src="js/memory-map.js"></script>
+  <script src="js/godbolt-viewer.js"></script>
   <script src="js/app.js"></script>
   <script>
     function showAbout() {
