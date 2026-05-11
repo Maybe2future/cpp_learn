@@ -678,13 +678,15 @@ class CppTutorialApp {
     const macros = ['#include', '#define', '#ifdef', '#ifndef', '#endif', '#pragma', '#if', '#else', '#elif'];
     document.querySelectorAll('.code-block pre code').forEach(block => {
       let html = block.textContent;
-      // Save string literals first (avoid keyword replacement inside strings)
+      // Step 1: Escape raw < > in source code BEFORE any highlighting (prevents HTML injection)
+      html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Step 2: Save string literals first (avoid keyword replacement inside strings)
       const strings = [];
-      html = html.replace(/"[^"]*"/g, m => {
+      html = html.replace(/&quot;[^&quot;]*&quot;/g, m => {
         strings.push(m);
         return '\x00STR' + strings.length + '\x00';
       });
-      html = html.replace(/'[^']*'/g, m => {
+      html = html.replace(/&#039;[^&#039;]*&#039;/g, m => {
         strings.push(m);
         return '\x00STR' + strings.length + '\x00';
       });
@@ -705,14 +707,6 @@ class CppTutorialApp {
       html = html.replace(/\x00STR(\d+)\x00/g, (_, idx) => {
         return `<span class="hl-string">${strings[parseInt(idx)-1]}</span>`;
       });
-      // Protect syntax highlight spans, escape raw < > in source code (e.g. <iostream>)
-      const hlSpans = [];
-      html = html.replace(/<span class="hl-(?:keyword|type|macro|number|string|comment)">[\s\S]*?<\/span>/g, m => {
-        hlSpans.push(m);
-        return `\x00HL${hlSpans.length}\x00`;
-      });
-      html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      html = html.replace(/\x00HL(\d+)\x00/g, (_, idx) => hlSpans[parseInt(idx)-1]);
       block.innerHTML = html;
     });
   }
